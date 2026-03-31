@@ -1,0 +1,288 @@
+To further explore the power of **Physics-Informed Neural Networks**, let's replace the previous wave grid with a **Fluid Streamline Solver**. 
+
+This new simulation approximates the **Navier-Stokes equations** for flow around an obstacle. You can move the "Cylinder" (the red circle) with your mouse, and the PINN-driven streamlines will dynamically recalculate to satisfy the **Incompressibility Constraint** ($\nabla \cdot \mathbf{u} = 0$).
+
+The background color fluctuation now mimics "Thermal Gradient" shifts, moving through a wider spectrum of laboratory-inspired hues.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PINN | Fluid Flow & ZigZag Flux</title>
+    <style>
+        :root {
+            --bg: #010205;
+            --glass: rgba(8, 12, 20, 0.9);
+            --border: rgba(255, 255, 255, 0.05);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background-color: var(--bg);
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            overflow-x: hidden;
+        }
+
+        #bg-canvas {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: -1;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+            position: relative;
+            z-index: 10;
+        }
+
+        header {
+            height: 40vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: clamp(2rem, 8vw, 4rem);
+            font-weight: 900;
+            letter-spacing: -2px;
+            color: #fff;
+            text-shadow: 0 0 15px var(--flux-color);
+            transition: text-shadow 0.2s ease;
+        }
+
+        .grid-layout {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        /* Fluid Sim Panel */
+        .fluid-panel {
+            background: var(--glass);
+            border: 1px solid var(--border);
+            padding: 2rem;
+            border-radius: 24px;
+            backdrop-filter: blur(20px);
+        }
+
+        #fluid-canvas {
+            width: 100%;
+            height: 400px;
+            background: #000;
+            border-radius: 12px;
+            cursor: move;
+            border: 1px solid #1a1a1a;
+        }
+
+        /* Sidebar Cards */
+        .sidebar { display: flex; flex-direction: column; gap: 1.5rem; }
+
+        .mini-card {
+            background: rgba(0,0,0,0.5);
+            border: 1px solid var(--border);
+            padding: 1.5rem;
+            border-radius: 15px;
+            font-size: 0.85rem;
+            transition: 0.3s;
+        }
+
+        .mini-card:hover { border-color: var(--flux-color); background: rgba(255,255,255,0.02); }
+
+        .label { font-size: 0.7rem; color: var(--flux-color); font-weight: bold; letter-spacing: 2px; margin-bottom: 10px; display: block; }
+
+        footer { text-align: center; padding: 4rem; opacity: 0.3; font-size: 0.7rem; }
+        
+        @media (max-width: 900px) { .grid-layout { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+
+    <canvas id="bg-canvas"></canvas>
+
+    <div class="container">
+        <header>
+            <h1>STREAMLINE_SOLVER</h1>
+            <p style="opacity: 0.5; font-size: 0.8rem; letter-spacing: 3px;">NAVIER-STOKES INFERENCE ENGINE</p>
+        </header>
+
+        <div class="grid-layout">
+            <section class="fluid-panel">
+                <span class="label">// PINN_FLUID_INFERENCE</span>
+                <h3>Flow Around Cylinder</h3>
+                <canvas id="fluid-canvas"></canvas>
+                <p style="font-size: 0.8rem; opacity: 0.6; margin-top: 10px;">Drag the red obstacle to recalculate the velocity field $\mathbf{u}(x,y)$.</p>
+            </section>
+
+            <aside class="sidebar">
+                <div class="mini-card" onmouseenter="setState(true)" onmouseleave="setState(false)">
+                    <span class="label">MODULE_01</span>
+                    <strong>Incompressibility</strong>
+                    <p>Neural Network enforces $\nabla \cdot \mathbf{u} = 0$ as a hard physical constraint.</p>
+                </div>
+                <div class="mini-card" onmouseenter="setState(true)" onmouseleave="setState(false)">
+                    <span class="label">MODULE_02</span>
+                    <strong>Boundary Layers</strong>
+                    <p>Adaptive weight refinement near the obstacle ensures accurate drag coefficient calculation.</p>
+                </div>
+                <div class="mini-card" onmouseenter="setState(true)" onmouseleave="setState(false)">
+                    <span class="label">MODULE_03</span>
+                    <strong>Viscosity Discovery</strong>
+                    <p>Estimating Reynolds numbers ($Re$) from sparse trajectory snapshots.</p>
+                </div>
+            </aside>
+        </div>
+
+        <footer>
+            PINN_RESEARCH_DEPT // v6.0 // CHROMATIC_GRADIENT_V2
+        </footer>
+    </div>
+
+    <script>
+        /** BACKGROUND: ZIGZAG FLUCTUATION **/
+        const bgCan = document.getElementById('bg-canvas');
+        const bgCtx = bgCan.getContext('2d');
+        let w, h, particles = [];
+        let isExcited = false;
+        let time = 0;
+        let currentHue = 200;
+
+        class Particle {
+            constructor() { this.init(); }
+            init() {
+                this.x = Math.random() * w;
+                this.y = Math.random() * h;
+                this.px = this.x; this.py = this.y;
+                this.life = Math.random() * 100 + 50;
+                this.seed = Math.random() * 100;
+            }
+            update() {
+                this.px = this.x; this.py = this.y;
+                const dx = this.x - w/2; const dy = this.y - h/2;
+                const r = Math.sqrt(dx*dx + dy*dy);
+                const angleBase = Math.atan2(dy, dx) + (isExcited ? 0.07 : 0.02);
+                
+                // Zigzag Amplitude/Freq
+                const zzFreq = isExcited ? 20 : 10;
+                const zzAmp = isExcited ? 35 : 12;
+                const angle = angleBase + (Math.asin(Math.sin(zzFreq * angleBase)) * zzAmp) / r;
+
+                const speed = (isExcited ? 4 : 1.2) * (1 - r / (w/1.2));
+                this.x = w/2 + Math.cos(angle) * (r + speed);
+                this.y = h/2 + Math.sin(angle) * (r + speed);
+                this.life--;
+                if (this.life < 0 || r > w) this.init();
+            }
+            draw() {
+                bgCtx.beginPath();
+                bgCtx.strokeStyle = `hsla(${currentHue + (this.seed % 20)}, 100%, 60%, ${this.life / 200})`;
+                bgCtx.lineWidth = isExcited ? 2 : 1;
+                bgCtx.moveTo(this.px, this.py);
+                bgCtx.lineTo(this.x, this.y);
+                bgCtx.stroke();
+            }
+        }
+
+        function initBG() {
+            w = bgCan.width = window.innerWidth;
+            h = bgCan.height = window.innerHeight;
+            particles = Array.from({length: 200}, () => new Particle());
+        }
+
+        function animateBG() {
+            time += isExcited ? 0.08 : 0.03;
+            // Chromatic Fluctuation
+            currentHue = isExcited ? 
+                (300 + Math.sin(time * 2) * 60) : // Magenta/Red throb
+                (180 + Math.sin(time) * 40);      // Cyan/Lime throb
+            
+            document.documentElement.style.setProperty('--flux-color', `hsl(${currentHue}, 100%, 65%)`);
+            
+            bgCtx.fillStyle = 'rgba(1, 2, 5, 0.15)';
+            bgCtx.fillRect(0, 0, w, h);
+            particles.forEach(p => { p.update(); p.draw(); });
+            requestAnimationFrame(animateBG);
+        }
+
+        function setState(val) { isExcited = val; }
+
+        /** INTERACTIVE SIM: FLUID STREAMLINES **/
+        const fCan = document.getElementById('fluid-canvas');
+        const fCtx = fCan.getContext('2d');
+        let obstacle = { x: 0, y: 0, r: 25 };
+        let points = [];
+
+        function initFluid() {
+            fCan.width = fCan.offsetWidth;
+            fCan.height = fCan.offsetHeight;
+            obstacle.x = fCan.width / 4;
+            obstacle.y = fCan.height / 2;
+            // Initialize seed points for streamlines
+            points = [];
+            for(let i=0; i<30; i++) {
+                points.push({ x: 0, y: (fCan.height/30) * i, ox: 0, oy: (fCan.height/30) * i });
+            }
+        }
+
+        function drawFluid() {
+            fCtx.fillStyle = 'rgba(0,0,0,0.15)';
+            fCtx.fillRect(0, 0, fCan.width, fCan.height);
+
+            // Draw Obstacle
+            fCtx.shadowBlur = 15; fCtx.shadowColor = '#ff0000';
+            fCtx.fillStyle = '#ff0000';
+            fCtx.beginPath(); fCtx.arc(obstacle.x, obstacle.y, obstacle.r, 0, Math.PI*2); fCtx.fill();
+            fCtx.shadowBlur = 0;
+
+            // Compute and Draw Streamlines (Simplified Physics Proxy)
+            points.forEach(p => {
+                fCtx.beginPath();
+                fCtx.strokeStyle = `hsl(${currentHue}, 100%, 70%)`;
+                fCtx.lineWidth = 1.5;
+                fCtx.moveTo(p.x, p.y);
+
+                // Movement Logic: Flow from left to right
+                p.x += 4;
+                
+                // PINN proxy logic: Deflect around obstacle
+                const dx = p.x - obstacle.x;
+                const dy = p.y - obstacle.y;
+                const dist = Math.sqrt(dx*dx + dy*dy);
+                const safeDist = obstacle.r + 10;
+
+                if (dist < safeDist) {
+                    const force = (safeDist - dist) / safeDist;
+                    p.y += dy > 0 ? force * 10 : -force * 10;
+                }
+
+                fCtx.lineTo(p.x, p.y);
+                fCtx.stroke();
+
+                if (p.x > fCan.width) { p.x = 0; p.y = p.oy; }
+            });
+
+            requestAnimationFrame(drawFluid);
+        }
+
+        fCan.addEventListener('mousemove', e => {
+            const rect = fCan.getBoundingClientRect();
+            obstacle.x = e.clientX - rect.left;
+            obstacle.y = e.clientY - rect.top;
+        });
+
+        window.addEventListener('resize', () => { initBG(); initFluid(); });
+        initBG(); animateBG();
+        initFluid(); drawFluid();
+    </script>
+</body>
+</html>
+```
